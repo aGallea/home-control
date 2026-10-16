@@ -22,8 +22,9 @@ def _light(endpoint="center", device="hall_switch"):
 class FakeClient:
     """Scripted aiomqtt.Client stand-in: replies to publishes with queued state messages."""
 
-    def __init__(self, replies=None, connect_error=None, publish_error=None):
+    def __init__(self, replies=None, connect_error=None, publish_error=None, retained=None):
         self.replies = list(replies or [])  # each: dict payload sent after a publish
+        self.retained = retained  # dict payload the broker delivers right after subscribe (RETAIN=1)
         self.connect_error = connect_error
         self.publish_error = publish_error
         self.subscribed: list[str] = []
@@ -40,13 +41,15 @@ class FakeClient:
 
     async def subscribe(self, topic, qos=0):
         self.subscribed.append(topic)
+        if self.retained is not None:
+            self._queue.put_nowait(SimpleNamespace(payload=json.dumps(self.retained).encode(), retain=True))
 
     async def publish(self, topic, payload=None, qos=0):
         if self.publish_error:
             raise self.publish_error
         self.published.append((topic, json.loads(payload)))
         for reply in self.replies:
-            self._queue.put_nowait(SimpleNamespace(payload=json.dumps(reply).encode()))
+            self._queue.put_nowait(SimpleNamespace(payload=json.dumps(reply).encode(), retain=False))
         self.replies = []
 
     @property
@@ -182,10 +185,31 @@ def test_default_client_factory_passes_settings(monkeypatch):
     class FakeAioClient:
         def __init__(self, *args, **kwargs):
             calls["args"], calls["kwargs"] = args, kwargs
+            self._client = SimpleNamespace(connect_timeout=5.0)
 
     monkeypatch.setattr("home_control.backends.zigbee2mqtt.aiomqtt.Client", FakeAioClient)
     b = Zigbee2MqttBackend()
     b.configure({**SETTINGS, "port": 1884, "timeout_s": 2.5})
-    b._make_client(b.settings)
+    client = b._make_client(b.settings)
+    assert client._client.connect_timeout == 2.5  # TCP connect bounded too, not paho's default 5 s
     assert calls["args"] == ("192.0.2.20", 1884)
     assert calls["kwargs"] == {"username": "homecontrol", "password": "s3cret-example", "timeout": 2.5, "keepalive": 10}
+
+
+async def test_retained_state_does_not_confirm():
+    client = FakeClient(retained={"state_center": "ON"})  # Zigbee2MQTT down; only a stale retained message
+    r = await _backend(client, {"timeout_s": 0.1}).switch(_light(), True)
+    assert r.outcome is Outcome.NOT_CONFIRMED
+
+
+async def test_retained_state_is_not_a_status_reply():
+    client = FakeClient(retained={"state_center": "ON"})
+    with pytest.raises(BackendError) as exc:
+        await _backend(client, {"timeout_s": 0.1}).status(_light())
+    assert exc.value.outcome is Outcome.NOT_CONFIRMED
+
+
+async def test_real_client_connect_timeout_follows_timeout_s():
+    b = Zigbee2MqttBackend()
+    b.configure({"host": "192.0.2.20", "timeout_s": 1.5})
+    assert b._make_client(b.settings)._client.connect_timeout == 1.5

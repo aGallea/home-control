@@ -89,12 +89,16 @@ def _parse_device(index: int, raw: Any, rooms: dict[str, tuple[str, tuple[str, .
     )
 
 
-def _parse_backend_settings(raw: Any) -> dict[str, dict[str, Any]]:
+def _parse_backend_settings(raw: Any, known: Mapping[str, Backend]) -> dict[str, dict[str, Any]]:
+    """Settings per known backend; entries for backends this version doesn't know are ignored."""
     if raw is None:
         return {}
-    if not isinstance(raw, dict) or not all(isinstance(v, dict) for v in raw.values()):
+    if not isinstance(raw, dict):
         raise ConfigError("backends must be an object mapping backend name to its settings object")
-    return {str(k): v for k, v in raw.items()}
+    for name, value in raw.items():
+        if name in known and not isinstance(value, dict):
+            raise ConfigError(f"backends.{name} must be an object")
+    return {str(k): v for k, v in raw.items() if k in known}
 
 
 def _check_names(devices: list[Device], rooms: dict[str, tuple[str, tuple[str, ...]]]) -> None:
@@ -140,7 +144,7 @@ def parse_config(data: Mapping[str, Any], backends: Mapping[str, Backend]) -> Pa
     if not isinstance(raw_devices, list):
         raise ConfigError("devices must be a list")
     rooms = _parse_rooms(data.get("rooms"))
-    settings = _parse_backend_settings(data.get("backends"))
+    settings = _parse_backend_settings(data.get("backends"), backends)
     devices: list[Device] = []
     skipped: list[tuple[str, str]] = []
     for i, raw in enumerate(raw_devices):

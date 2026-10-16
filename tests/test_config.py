@@ -193,6 +193,7 @@ def test_unused_backend_is_not_configured():
 
 def test_unknown_backend_settings_ignored_and_bad_shapes_rejected():
     _parse(_with(lambda d: d.update(backends={"future_bus": {"anything": 1}})))
+    _parse(_with(lambda d: d.update(backends={"future_bus": "token"})))  # unknown backend: any shape is ignored
     with pytest.raises(ConfigError, match="backends"):
         _parse(_with(lambda d: d.update(backends=["x"])))
     with pytest.raises(ConfigError, match="backends"):

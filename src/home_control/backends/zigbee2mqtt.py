@@ -95,7 +95,7 @@ class Zigbee2MqttBackend:
             raise ConfigError(f"device '{device.name}': connection.endpoint must be letters, digits or _")
 
     def _make_client(self, settings: Zigbee2MqttSettings) -> Any:
-        return aiomqtt.Client(
+        client = aiomqtt.Client(
             settings.host,
             settings.port,
             username=settings.username,
@@ -103,6 +103,9 @@ class Zigbee2MqttBackend:
             timeout=settings.timeout_s,
             keepalive=10,
         )
+        # aiomqtt's timeout covers CONNACK onwards; bound the TCP connect too (paho defaults to 5 s).
+        client._client.connect_timeout = settings.timeout_s
+        return client
 
     def _require_settings(self) -> Zigbee2MqttSettings:
         if self.settings is None:
@@ -128,6 +131,8 @@ class Zigbee2MqttBackend:
                 await client.publish(f"{topic}/{suffix}", json.dumps(body), qos=1)
                 async with asyncio.timeout(s.timeout_s):
                     async for message in client.messages:
+                        if getattr(message, "retain", False):
+                            continue  # a stored state from before this command, not a reply to it
                         data = _payload(message)
                         if data is not None and done(data):
                             return Outcome.OK, data
