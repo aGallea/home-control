@@ -1,0 +1,44 @@
+[build-system]
+requires = ["setuptools"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "home-control"
+version = "0.2.0"
+description = "Local-only control of home devices (Tuya LAN shutters), configured by the caller."
+readme = "README.md"
+license = "MIT"
+requires-python = ">=3.11"
+dependencies = ["tinytuya>=1.17,<1.18"]
+
+[project.urls]
+Source = "https://github.com/aGallea/home-control"
+
+[project.scripts]
+home-control = "home_control.cli:main"
+
+[dependency-groups]
+dev = ["pytest", "pytest-asyncio", "ruff", "mypy"]
+
+[tool.setuptools]
+package-dir = { "" = "src" }
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 119
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "C4"]
+ignore = ["E501"]
+
+[tool.mypy]
+python_version = "3.11"
+files = ["src/"]
+strict = true
+ignore_missing_imports = true
