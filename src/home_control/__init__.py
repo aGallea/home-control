@@ -4,6 +4,7 @@ from home_control.backends import Backend, BackendError, TuyaLanBackend, default
 from home_control.config import ParsedConfig, parse_config
 from home_control.errors import ConfigError, UnknownTargetError
 from home_control.files import load_config_file, save_config_file
+from home_control.home import Home
 from home_control.models import SHUTTER, CommandResult, Device, Direction, Outcome, normalize_name
 
 __all__ = [
@@ -14,6 +15,7 @@ __all__ = [
     "ConfigError",
     "Device",
     "Direction",
+    "Home",
     "Outcome",
     "ParsedConfig",
     "TuyaLanBackend",
