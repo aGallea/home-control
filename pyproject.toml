@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "home-control"
-version = "0.2.0"
+version = "0.2.1"
 description = "Local-only control of home devices (Tuya LAN shutters), configured by the caller."
 readme = "README.md"
 license = "MIT"

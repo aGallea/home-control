@@ -6,7 +6,7 @@ The library holds no device data: the application using it owns a JSON device fi
 ## Install
 
 ```
-pip install "home-control @ https://github.com/aGallea/home-control/releases/download/v0.2.0/home_control-0.2.0-py3-none-any.whl"
+pip install "home-control @ https://github.com/aGallea/home-control/releases/download/v0.2.1/home_control-0.2.1-py3-none-any.whl"
 ```
 
 ## Use
@@ -53,8 +53,17 @@ home-control --config path/to/home.json scan
 
 ## Contributing
 
-Never commit device data. Before pushing, run:
+Never commit device data. Install a local pre-push hook (it stays in `.git/hooks`, so your paths never reach the repo):
 
+```sh
+cat > .git/hooks/pre-push <<'HOOK'
+#!/bin/sh
+cd "$(git rev-parse --show-toplevel)" || exit 1
+uv run --quiet pytest -q tests/test_privacy.py || exit 1
+python3 scripts/check_no_private_data.py --also you@example.com path/to/your/home.json path/to/tinytuya-devices.json
+HOOK
+chmod 700 .git/hooks/pre-push
 ```
-python scripts/check_no_private_data.py --also you@example.com path/to/your/home.json path/to/tinytuya-devices.json
-```
+
+The check scans every commit (content, messages, identities, merges, tags) for values from your device files and
+prints any match redacted. Values shorter than four characters are matched as whole words.

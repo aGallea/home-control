@@ -167,3 +167,15 @@ def test_scan_missing_device_exit_1(cfg, monkeypatch, capsys):
     monkeypatch.setattr(cli, "_scan", lambda: {"dev-a": {"ip": "192.0.2.10"}})
     assert cli.main(["--config", str(cfg), "scan"]) == 1
     assert "Kitchen right: not found on the LAN" in capsys.readouterr().out
+
+
+def test_import_treats_room_spellings_as_one_room(tmp_path, monkeypatch):
+    export = tmp_path / "devices.json"
+    export.write_text(json.dumps(EXPORT), encoding="utf-8")
+    out = tmp_path / "home.json"
+    prompts = _answers(monkeypatch, ["A", "Kitchen", "", "המטבח", "B", " kitchen ", ""])
+    assert cli.main(["--config", str(out), "import", str(export)]) == 0
+    data = load_config_file(out)
+    assert [d["room"] for d in data["devices"]] == ["Kitchen", "Kitchen"]
+    assert data["rooms"] == {"Kitchen": {"aliases": ["המטבח"]}}
+    assert sum("Room aliases" in p for p in prompts) == 1

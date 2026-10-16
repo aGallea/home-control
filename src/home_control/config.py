@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Any
 
 from home_control.backends.base import Backend
@@ -147,6 +147,8 @@ def parse_config(data: Mapping[str, Any], backends: Mapping[str, Backend]) -> Pa
         devices.append(device)
     for d in devices:
         rooms.setdefault(normalize_name(d.room), (d.room, ()))
+    # one spelling per room, so "Kitchen" and "kitchen" can't split a room in two
+    devices = [replace(d, room=rooms[normalize_name(d.room)][0]) for d in devices]
     _check_names(devices, rooms)
     for name, reason in skipped:
         logger.warning("skipping device '%s': %s", name, reason)

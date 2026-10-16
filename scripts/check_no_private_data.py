@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Fail if any private value from the owner's device files appears anywhere in this repo's git history.
 
-Usage: python scripts/check_no_private_data.py [--also STRING ...] DENY_FILE [DENY_FILE ...]
+Usage: python scripts/check_no_private_data.py [--repo PATH] [--also STRING ...] DENY_FILE [DENY_FILE ...]
 
 DENY_FILEs are the owner's real device files (tinytuya devices.json, an application's home.json). They stay
 outside the repo. Matches are reported redacted, so the output itself is safe to share.
@@ -11,13 +11,16 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import subprocess
 import sys
 from pathlib import Path
 from typing import Any
 
 SENSITIVE_KEYS = {"id", "key", "ip", "mac", "uuid", "sn", "name", "room", "aliases", "product_id", "local_key"}
-MIN_LEN = 4
+ROOT = Path(__file__).resolve().parents[1]
+MIN_LEN = 2  # shorter values can't be told apart from ordinary text
+WORD_LEN = 4  # values shorter than this must match as whole words (e.g. a room called "Den")
 
 
 def _collect(node: Any, out: set[str], sensitive: bool = False) -> None:
@@ -40,9 +43,18 @@ def deny_values(paths: list[Path], also: list[str]) -> set[str]:
     return values
 
 
-def history_text() -> str:
-    cmd = ["git", "log", "--all", "-p", "--format=%H%n%an <%ae>%n%cn <%ce>%n%B"]
-    return subprocess.run(cmd, capture_output=True, text=True, check=True).stdout
+def history_text(repo: Path) -> str:
+    """Every commit's identity, message and patch (merges included), plus tag annotations."""
+    log = ["git", "log", "--all", "-m", "-p", "--format=%H%n%an <%ae>%n%cn <%ce>%n%B"]
+    tags = ["git", "for-each-ref", "refs/tags", "--format=%(refname) %(taggeremail) %(contents)"]
+    return "\n".join(subprocess.run(c, cwd=repo, capture_output=True, text=True, check=True).stdout for c in (log, tags))
+
+
+def found(value: str, text: str) -> bool:
+    needle = value.casefold()
+    if len(needle) >= WORD_LEN:
+        return needle in text
+    return re.search(rf"(?<!\w){re.escape(needle)}(?!\w)", text) is not None
 
 
 def redact(value: str) -> str:
@@ -51,12 +63,17 @@ def redact(value: str) -> str:
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    parser.add_argument("--repo", type=Path, default=ROOT, help="repository to scan (default: this one)")
     parser.add_argument("--also", action="append", default=[], help="extra private string (e.g. an email)")
     parser.add_argument("deny_files", nargs="+", type=Path)
     args = parser.parse_args(argv)
-    values = deny_values(args.deny_files, args.also)
-    text = history_text().casefold()
-    hits = sorted(redact(v) for v in values if v.casefold() in text)
+    try:
+        values = deny_values(args.deny_files, args.also)
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+        print(f"cannot read deny file: {exc}", file=sys.stderr)
+        return 2
+    text = history_text(args.repo).casefold()
+    hits = sorted(redact(v) for v in values if found(v, text))
     for hit in hits:
         print(f"private value found in git history: {hit}")
     print(f"checked {len(values)} private values: {'FAIL' if hits else 'clean'}")

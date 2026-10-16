@@ -19,7 +19,7 @@ from home_control.config import parse_config
 from home_control.errors import ConfigError, UnknownTargetError
 from home_control.files import load_config_file, save_config_file
 from home_control.home import Home
-from home_control.models import Direction
+from home_control.models import Direction, normalize_name
 
 ENV_VAR = "HOME_CONTROL_CONFIG"
 
@@ -57,11 +57,13 @@ def _cmd_import(target: Path, source: Path, force: bool) -> int:
         return 2
     exported = json.loads(source.read_text(encoding="utf-8"))
     rooms: dict[str, dict[str, list[str]]] = {}
+    room_names: dict[str, str] = {}  # normalized -> first spelling entered
     devices: list[dict[str, Any]] = []
     for dev in exported:
         tuya_name = str(dev.get("name") or dev["id"])
         name = input(f"Name [{tuya_name}]: ").strip() or tuya_name
         room = input("Room: ").strip()
+        room = room_names.setdefault(normalize_name(room), room)
         aliases = _split(input("Aliases (comma-separated, optional): "))
         if room not in rooms:
             rooms[room] = {"aliases": _split(input("Room aliases (comma-separated, optional): "))}

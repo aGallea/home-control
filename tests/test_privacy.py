@@ -46,3 +46,10 @@ def test_commit_identities_are_noreply():
     proc = subprocess.run(["git", "log", "--all", "--format=%ae%n%ce"], cwd=ROOT, capture_output=True, text=True)
     emails = set(proc.stdout.split()) if proc.returncode == 0 else set()  # no commits yet -> nothing to check
     assert {e.casefold() for e in emails} <= ALLOWED_EMAILS
+
+
+def test_commit_messages_have_no_private_ips_or_emails():
+    proc = subprocess.run(["git", "log", "--all", "--format=%B"], cwd=ROOT, capture_output=True, text=True)
+    text = proc.stdout if proc.returncode == 0 else ""
+    assert PRIVATE_IP.findall(text) == []
+    assert [m for m in EMAIL.findall(text) if m.casefold() not in ALLOWED_EMAILS] == []

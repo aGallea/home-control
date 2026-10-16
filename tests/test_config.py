@@ -133,3 +133,13 @@ def test_bad_aliases_and_rooms_types_rejected():
         _parse(_with(lambda d: d.update(rooms=["Kitchen"])))
     with pytest.raises(ConfigError, match="options"):
         _parse(_with(lambda d: d["devices"][0].update(options=[1])))
+
+
+def test_room_spellings_without_rooms_entry_are_one_room():
+    def mutate(d):
+        d.pop("rooms")
+        d["devices"][1]["room"] = "  KITCHEN "
+
+    cfg = _parse(_with(mutate))
+    assert [d.room for d in cfg.devices] == ["Kitchen", "Kitchen", "Hall"]
+    assert cfg.rooms == {"Kitchen": (), "Hall": ()}
