@@ -18,18 +18,23 @@ CONFIG = {
         {"name": "Kitchen right", "room": "Kitchen", "type": "shutter", "backend": "tuya_lan",
          "connection": {"id": "dev-b", "ip": "192.0.2.11", "key": "0123456789abcdef", "version": 3.3},
          "options": {"inverted": True, "future_option": 7}},
-        {"name": "Hall light", "room": "Hall", "type": "light", "backend": "zigbee2mqtt", "connection": {"topic": "t"}},
+        {"name": "Hall light", "room": "Hall", "type": "sprinkler", "backend": "zigbee2mqtt", "connection": {"topic": "t"}},
     ],
 }
 
 
 class FakeBackend:
+    types = frozenset({"shutter"})
+
     def __init__(self):
         self.fail: set[str] = set()
         self.status_fail: set[str] = set()
         self.calls: list[tuple[str, Direction]] = []
 
     def validate(self, device: Device) -> None:
+        pass
+
+    def configure(self, settings):
         pass
 
     async def move(self, device: Device, direction: Direction) -> CommandResult:
@@ -97,7 +102,7 @@ def test_list_includes_skipped(cfg, backend, capsys):
     assert cli.main(["--config", str(cfg), "list"]) == 0
     data = json.loads(capsys.readouterr().out)
     assert data["rooms"][0]["devices"] == ["Kitchen left", "Kitchen right"]
-    assert data["skipped"] == [{"name": "Hall light", "reason": "unknown type 'light'"}]
+    assert data["skipped"] == [{"name": "Hall light", "reason": "unknown type 'sprinkler'"}]
 
 
 def test_status_exit_1_on_error(cfg, backend, capsys):

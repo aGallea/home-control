@@ -74,14 +74,14 @@ def test_backend_validation_runs():
 
 def test_unknown_type_and_backend_are_skipped():
     def add(d):
-        d["devices"].append({"name": "Hall light", "room": "Hall", "type": "light", "backend": "zigbee2mqtt",
+        d["devices"].append({"name": "Hall light", "room": "Hall", "type": "sprinkler", "backend": "zigbee2mqtt",
                              "connection": {"topic": "z2m/hall"}})
         d["devices"].append({"name": "Hall fan", "room": "Hall", "type": "shutter", "backend": "future_lan",
                              "connection": {}})
 
     cfg = _parse(_with(add))
     assert [d.name for d in cfg.devices] == ["Kitchen left", "Kitchen right", "Hall"]
-    assert cfg.skipped == (("Hall light", "unknown type 'light'"), ("Hall fan", "unknown backend 'future_lan'"))
+    assert cfg.skipped == (("Hall light", "unknown type 'sprinkler'"), ("Hall fan", "unknown backend 'future_lan'"))
 
 
 def test_duplicate_device_names_and_aliases_rejected():
@@ -143,3 +143,62 @@ def test_room_spellings_without_rooms_entry_are_one_room():
     cfg = _parse(_with(mutate))
     assert [d.room for d in cfg.devices] == ["Kitchen", "Kitchen", "Hall"]
     assert cfg.rooms == {"Kitchen": (), "Hall": ()}
+
+
+class _FakeLightBackend:
+    types = frozenset({"light"})
+
+    def __init__(self):
+        self.settings = None
+
+    def configure(self, settings):
+        if "host" not in settings:
+            raise ConfigError("backend 'fakelight': backends.fakelight.host is required")
+        self.settings = dict(settings)
+
+    def validate(self, device):
+        pass
+
+
+def _light(name="Kitchen spots", room="Kitchen"):
+    return {"name": name, "room": room, "type": "light", "backend": "fakelight", "connection": {"device": "hall_switch"}}
+
+
+def test_light_type_is_known_and_backend_is_configured():
+    fake = _FakeLightBackend()
+    data = _with(lambda d: (d["devices"].append(_light()), d.update(backends={"fakelight": {"host": "192.0.2.20"}})))
+    cfg = parse_config(data, {**default_backends(), "fakelight": fake})
+    assert [d.name for d in cfg.devices][-1] == "Kitchen spots"
+    assert fake.settings == {"host": "192.0.2.20"}
+
+
+def test_backend_settings_missing_is_error():
+    data = _with(lambda d: d["devices"].append(_light()))
+    with pytest.raises(ConfigError, match="host is required"):
+        parse_config(data, {**default_backends(), "fakelight": _FakeLightBackend()})
+
+
+def test_type_not_supported_by_backend_is_error():
+    data = _with(lambda d: d["devices"].append({**_light(), "backend": "tuya_lan"}))
+    with pytest.raises(ConfigError, match=r"Kitchen spots.*'light'.*not supported.*'tuya_lan'"):
+        _parse(data)
+
+
+def test_unused_backend_is_not_configured():
+    fake = _FakeLightBackend()
+    data = _with(lambda d: d.update(backends={"fakelight": {}}))  # would fail configure, but no device uses it
+    parse_config(data, {**default_backends(), "fakelight": fake})
+    assert fake.settings is None
+
+
+def test_unknown_backend_settings_ignored_and_bad_shapes_rejected():
+    _parse(_with(lambda d: d.update(backends={"future_bus": {"anything": 1}})))
+    with pytest.raises(ConfigError, match="backends"):
+        _parse(_with(lambda d: d.update(backends=["x"])))
+    with pytest.raises(ConfigError, match="backends"):
+        _parse(_with(lambda d: d.update(backends={"tuya_lan": "x"})))
+
+
+def test_shutter_only_config_needs_no_backends_section():
+    cfg = _parse(BASE)
+    assert len(cfg.devices) == 3 and cfg.skipped == ()

@@ -29,6 +29,8 @@ CONFIG = {
 
 
 class FakeBackend:
+    types = frozenset({"shutter"})
+
     def __init__(self, fail=None, raise_for=None):
         self.calls: list[tuple[str, Direction]] = []
         self.fail: dict[str, Outcome] = fail or {}
@@ -37,6 +39,9 @@ class FakeBackend:
         self.max_in_flight = 0
 
     def validate(self, device: Device) -> None:
+        pass
+
+    def configure(self, settings):
         pass
 
     async def move(self, device: Device, direction: Direction) -> CommandResult:
@@ -136,12 +141,12 @@ async def test_status_maps_failures():
 
 
 def test_names_shape():
-    config = {**CONFIG, "devices": [*CONFIG["devices"], {**_dev("Hall light", "Hall", "z"), "type": "light"}]}
+    config = {**CONFIG, "devices": [*CONFIG["devices"], {**_dev("Hall light", "Hall", "z"), "type": "sprinkler"}]}
     names = _home(config=config).names()
     rooms = {r["name"]: r for r in names["rooms"]}
     assert rooms["Kitchen"] == {"name": "Kitchen", "aliases": ["המטבח"], "devices": ["Kitchen left", "Kitchen right"]}
     assert names["devices"][0] == {"name": "Kitchen left", "room": "Kitchen", "type": "shutter", "aliases": ["מטבח שמאל"]}
-    assert names["skipped"] == [{"name": "Hall light", "reason": "unknown type 'light'"}]
+    assert names["skipped"] == [{"name": "Hall light", "reason": "unknown type 'sprinkler'"}]
 
 
 def test_constructor_accepts_parsed_config():
