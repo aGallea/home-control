@@ -24,7 +24,7 @@ CONFIG = {
 
 
 class FakeBackend:
-    types = frozenset({"shutter"})
+    types = frozenset({"shutter", "light"})
 
     def __init__(self):
         self.fail: set[str] = set()
@@ -39,6 +39,12 @@ class FakeBackend:
 
     async def move(self, device: Device, direction: Direction) -> CommandResult:
         self.calls.append((device.name, direction))
+        if device.name in self.fail:
+            return CommandResult(device.name, Outcome.UNREACHABLE, "timeout")
+        return CommandResult(device.name, Outcome.OK)
+
+    async def switch(self, device: Device, on: bool) -> CommandResult:
+        self.calls.append((device.name, on))
         if device.name in self.fail:
             return CommandResult(device.name, Outcome.UNREACHABLE, "timeout")
         return CommandResult(device.name, Outcome.OK)
@@ -184,3 +190,13 @@ def test_import_treats_room_spellings_as_one_room(tmp_path, monkeypatch):
     assert [d["room"] for d in data["devices"]] == ["Kitchen", "Kitchen"]
     assert data["rooms"] == {"Kitchen": {"aliases": ["המטבח"]}}
     assert sum("Room aliases" in p for p in prompts) == 1
+
+
+def test_on_off_commands(tmp_path, backend, capsys):
+    path = tmp_path / "home.json"
+    save_config_file(path, {"version": 1, "devices": [
+        {"name": "Kitchen spots", "room": "Kitchen", "type": "light", "backend": "tuya_lan", "connection": {}},
+    ]})
+    assert cli.main(["--config", str(path), "on", "Kitchen"]) == 0
+    assert "Kitchen spots: ok" in capsys.readouterr().out
+    assert cli.main(["--config", str(path), "off", "Kitchen", "spots"]) == 0

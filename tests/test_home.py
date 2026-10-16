@@ -29,7 +29,7 @@ CONFIG = {
 
 
 class FakeBackend:
-    types = frozenset({"shutter"})
+    types = frozenset({"shutter", "light"})
 
     def __init__(self, fail=None, raise_for=None):
         self.calls: list[tuple[str, Direction]] = []
@@ -52,6 +52,11 @@ class FakeBackend:
         self.calls.append((device.name, direction))
         if device.name in self.raise_for:
             raise RuntimeError("boom")
+        outcome = self.fail.get(device.name, Outcome.OK)
+        return CommandResult(device.name, outcome, None if outcome is Outcome.OK else "x")
+
+    async def switch(self, device: Device, on: bool) -> CommandResult:
+        self.calls.append((device.name, "on" if on else "off"))
         outcome = self.fail.get(device.name, Outcome.OK)
         return CommandResult(device.name, outcome, None if outcome is Outcome.OK else "x")
 
@@ -112,7 +117,8 @@ async def test_room_runs_concurrently():
 async def test_failures_isolated_and_logged(caplog):
     backend = FakeBackend(fail={"Hall left": Outcome.UNREACHABLE}, raise_for={"Kitchen left"})
     with caplog.at_level("WARNING", logger="home_control.home"):
-        results = await _home(backend).up("all")
+        tuya_config = {**CONFIG, "devices": [{**d, "backend": "tuya_lan"} for d in CONFIG["devices"]]}
+        results = await Home.from_config(tuya_config, {"tuya_lan": backend}).up("all")
     by_name = {r.device_name: r for r in results}
     assert by_name["Hall left"].outcome is Outcome.UNREACHABLE
     assert by_name["Kitchen left"].outcome is Outcome.REJECTED and "boom" in (by_name["Kitchen left"].detail or "")
@@ -153,3 +159,41 @@ def test_constructor_accepts_parsed_config():
     backends = {"fake": FakeBackend()}
     home = Home(parse_config(CONFIG, backends), backends)
     assert len(home.devices) == 5
+
+
+LIGHTS_CONFIG = {
+    "version": 1,
+    "devices": [
+        _dev("Kitchen left", "Kitchen", "a"),
+        _dev("Kitchen spots", "Kitchen", "b", dtype="light"),
+        _dev("Kitchen strip", "Kitchen", "c", dtype="light"),
+        _dev("Porch lamp", "Porch", "d", dtype="light"),
+    ],
+}
+
+
+async def test_mixed_room_on_touches_only_lights():
+    backend = FakeBackend()
+    home = _home(backend, LIGHTS_CONFIG)
+    results = await home.off("Kitchen")
+    assert sorted(r.device_name for r in results) == ["Kitchen spots", "Kitchen strip"]
+    assert sorted(backend.calls) == [("Kitchen spots", "off"), ("Kitchen strip", "off")]
+    backend.calls.clear()
+    await home.down("Kitchen")
+    assert backend.calls == [("Kitchen left", Direction.DOWN)]
+
+
+async def test_on_all_and_light_less_target():
+    backend = FakeBackend()
+    home = _home(backend, LIGHTS_CONFIG)
+    assert len(await home.on("all")) == 3
+    with pytest.raises(UnknownTargetError) as exc:
+        await home.on("Kitchen left")
+    assert exc.value.valid == ["Kitchen spots", "Kitchen strip", "Porch lamp", "Kitchen", "Porch", "all"]
+
+
+async def test_light_failures_logged_without_scan_hint(caplog):
+    backend = FakeBackend(fail={"Porch lamp": Outcome.UNREACHABLE})
+    with caplog.at_level("WARNING", logger="home_control.home"):
+        await _home(backend, LIGHTS_CONFIG).on("Porch")
+    assert "on Porch lamp: unreachable" in caplog.text and "home-control scan" not in caplog.text
