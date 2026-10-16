@@ -22,13 +22,13 @@ The repo is public, so it must contain no private data or information.
 **Never in the repo**, in any file, commit message, PR text or release note:
 - device IDs, local keys or real IPs;
 - home layout, room names or people's names;
-- the owner's email address.
+- the owner's email address in files or in commits we author (merge commits GitHub creates carry the merging user's address; that is accepted).
 
 **Commit identity:** commits use the GitHub no-reply address `5315995+aGallea@users.noreply.github.com`, set in this repo's local git config.
 
 **Automated guard:** a test (`tests/test_privacy.py`, also run in CI) fails if any tracked file contains:
 - a private-range IPv4 address (`10.x`, `172.16–31.x`, `192.168.x`);
-- an email address other than the no-reply one.
+- an email address other than the no-reply one (in files, and in commit identities except the author of GitHub-made merge commits).
 
 Examples use `192.0.2.0/24` (TEST-NET-1).
 

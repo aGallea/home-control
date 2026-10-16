@@ -8,6 +8,7 @@ from enum import Enum
 from typing import Any
 
 SHUTTER = "shutter"
+LIGHT = "light"
 
 # Typographic apostrophes (LLM/STT output) and the Hebrew geresh all compare as "'".
 _APOSTROPHES = str.maketrans(dict.fromkeys("’‘ʼ׳´`", "'"))

@@ -4,14 +4,14 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from typing import Any
 
 import tinytuya
 
 from home_control.backends.base import BackendError
 from home_control.errors import ConfigError
-from home_control.models import CommandResult, Device, Direction, Outcome
+from home_control.models import SHUTTER, CommandResult, Device, Direction, Outcome
 
 DPS_CONTROL = "1"
 # Tuya curtain switches over LAN: on = up, off = down. The cloud's open/close are acked and silently ignored.
@@ -63,6 +63,8 @@ def _require_str(device: Device, field: str) -> None:
 class TuyaLanBackend:
     """Tuya Wi-Fi curtain switches over the LAN."""
 
+    types = frozenset({SHUTTER})
+
     def __init__(
         self,
         timeout_s: float = 3.0,
@@ -72,6 +74,13 @@ class TuyaLanBackend:
         self._timeout_s = timeout_s
         self._attempts = attempts
         self._factory = device_factory or self._make_device
+
+    def configure(self, settings: Mapping[str, Any]) -> None:
+        """tuya_lan needs no backend-level settings."""
+
+    async def switch(self, device: Device, on: bool) -> CommandResult:
+        """Lights are not driven over tuya_lan."""
+        return CommandResult(device.name, Outcome.REJECTED, "on/off is not supported by tuya_lan")
 
     def validate(self, device: Device) -> None:
         """Require connection.id/ip/key; check connection.version and options.inverted types."""

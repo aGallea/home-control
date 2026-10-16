@@ -18,12 +18,14 @@ CONFIG = {
         {"name": "Kitchen right", "room": "Kitchen", "type": "shutter", "backend": "tuya_lan",
          "connection": {"id": "dev-b", "ip": "192.0.2.11", "key": "0123456789abcdef", "version": 3.3},
          "options": {"inverted": True, "future_option": 7}},
-        {"name": "Hall light", "room": "Hall", "type": "light", "backend": "zigbee2mqtt", "connection": {"topic": "t"}},
+        {"name": "Hall light", "room": "Hall", "type": "sprinkler", "backend": "zigbee2mqtt", "connection": {"topic": "t"}},
     ],
 }
 
 
 class FakeBackend:
+    types = frozenset({"shutter", "light"})
+
     def __init__(self):
         self.fail: set[str] = set()
         self.status_fail: set[str] = set()
@@ -32,8 +34,17 @@ class FakeBackend:
     def validate(self, device: Device) -> None:
         pass
 
+    def configure(self, settings):
+        pass
+
     async def move(self, device: Device, direction: Direction) -> CommandResult:
         self.calls.append((device.name, direction))
+        if device.name in self.fail:
+            return CommandResult(device.name, Outcome.UNREACHABLE, "timeout")
+        return CommandResult(device.name, Outcome.OK)
+
+    async def switch(self, device: Device, on: bool) -> CommandResult:
+        self.calls.append((device.name, on))
         if device.name in self.fail:
             return CommandResult(device.name, Outcome.UNREACHABLE, "timeout")
         return CommandResult(device.name, Outcome.OK)
@@ -97,7 +108,7 @@ def test_list_includes_skipped(cfg, backend, capsys):
     assert cli.main(["--config", str(cfg), "list"]) == 0
     data = json.loads(capsys.readouterr().out)
     assert data["rooms"][0]["devices"] == ["Kitchen left", "Kitchen right"]
-    assert data["skipped"] == [{"name": "Hall light", "reason": "unknown type 'light'"}]
+    assert data["skipped"] == [{"name": "Hall light", "reason": "unknown type 'sprinkler'"}]
 
 
 def test_status_exit_1_on_error(cfg, backend, capsys):
@@ -179,3 +190,13 @@ def test_import_treats_room_spellings_as_one_room(tmp_path, monkeypatch):
     assert [d["room"] for d in data["devices"]] == ["Kitchen", "Kitchen"]
     assert data["rooms"] == {"Kitchen": {"aliases": ["המטבח"]}}
     assert sum("Room aliases" in p for p in prompts) == 1
+
+
+def test_on_off_commands(tmp_path, backend, capsys):
+    path = tmp_path / "home.json"
+    save_config_file(path, {"version": 1, "devices": [
+        {"name": "Kitchen spots", "room": "Kitchen", "type": "light", "backend": "tuya_lan", "connection": {}},
+    ]})
+    assert cli.main(["--config", str(path), "on", "Kitchen"]) == 0
+    assert "Kitchen spots: ok" in capsys.readouterr().out
+    assert cli.main(["--config", str(path), "off", "Kitchen", "spots"]) == 0

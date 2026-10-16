@@ -9,11 +9,11 @@ from typing import Any
 
 from home_control.backends.base import Backend
 from home_control.errors import ConfigError
-from home_control.models import SHUTTER, Device, normalize_name
+from home_control.models import LIGHT, SHUTTER, Device, normalize_name
 
 logger = logging.getLogger(__name__)
 
-KNOWN_TYPES = frozenset({SHUTTER})
+KNOWN_TYPES = frozenset({SHUTTER, LIGHT})
 ALL = "all"
 _REQUIRED_STR = ("name", "room", "type", "backend")
 
@@ -89,6 +89,18 @@ def _parse_device(index: int, raw: Any, rooms: dict[str, tuple[str, tuple[str, .
     )
 
 
+def _parse_backend_settings(raw: Any, known: Mapping[str, Backend]) -> dict[str, dict[str, Any]]:
+    """Settings per known backend; entries for backends this version doesn't know are ignored."""
+    if raw is None:
+        return {}
+    if not isinstance(raw, dict):
+        raise ConfigError("backends must be an object mapping backend name to its settings object")
+    for name, value in raw.items():
+        if name in known and not isinstance(value, dict):
+            raise ConfigError(f"backends.{name} must be an object")
+    return {str(k): v for k, v in raw.items() if k in known}
+
+
 def _check_names(devices: list[Device], rooms: dict[str, tuple[str, tuple[str, ...]]]) -> None:
     owner: dict[str, str] = {}
     for d in devices:
@@ -132,19 +144,26 @@ def parse_config(data: Mapping[str, Any], backends: Mapping[str, Backend]) -> Pa
     if not isinstance(raw_devices, list):
         raise ConfigError("devices must be a list")
     rooms = _parse_rooms(data.get("rooms"))
+    settings = _parse_backend_settings(data.get("backends"), backends)
     devices: list[Device] = []
     skipped: list[tuple[str, str]] = []
     for i, raw in enumerate(raw_devices):
         device = _parse_device(i, raw, rooms)
         if device.type not in KNOWN_TYPES:
             skipped.append((device.name, f"unknown type '{device.type}'"))
-            continue
-        backend = backends.get(device.backend)
-        if backend is None:
+        elif device.backend not in backends:
             skipped.append((device.name, f"unknown backend '{device.backend}'"))
-            continue
+        else:
+            devices.append(device)
+    for name in dict.fromkeys(d.backend for d in devices):
+        backends[name].configure(settings.get(name, {}))
+    for device in devices:
+        backend = backends[device.backend]
+        if device.type not in backend.types:
+            raise ConfigError(
+                f"device '{device.name}': type '{device.type}' is not supported by backend '{device.backend}'"
+            )
         backend.validate(device)
-        devices.append(device)
     for d in devices:
         rooms.setdefault(normalize_name(d.room), (d.room, ()))
     # one spelling per room, so "Kitchen" and "kitchen" can't split a room in two

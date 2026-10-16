@@ -130,3 +130,13 @@ def test_default_factory_builds_tinytuya_device(monkeypatch):
 
 def test_tinytuya_logger_capped_at_info():
     assert logging.getLogger("tinytuya").level == logging.INFO
+
+
+def test_tuya_declares_shutter_and_rejects_switch():
+    import asyncio
+
+    b = TuyaLanBackend()
+    assert b.types == frozenset({"shutter"})
+    b.configure({})
+    r = asyncio.run(b.switch(_device(), True))
+    assert r.outcome is Outcome.REJECTED and "not supported" in (r.detail or "")

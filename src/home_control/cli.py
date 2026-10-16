@@ -37,7 +37,7 @@ def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="home-control", description="Local-only home device control.")
     parser.add_argument("--config", type=Path, help=f"device file (JSON); default ${ENV_VAR}")
     sub = parser.add_subparsers(dest="command", required=True)
-    for name in ("up", "down", "stop", "status"):
+    for name in ("up", "down", "stop", "on", "off", "status"):
         sub.add_parser(name).add_argument("target", nargs="+", help="device, room, or 'all'")
     sub.add_parser("list")
     imp = sub.add_parser("import", help="create the device file from a tinytuya devices.json export (shutters)")
@@ -135,7 +135,10 @@ def main(argv: Sequence[str] | None = None) -> int:
             status = asyncio.run(home.status(target))
             print(json.dumps(status, ensure_ascii=False, indent=2))
             return 1 if any("error" in v for v in status.values()) else 0
-        results = asyncio.run(home.move(target, Direction(args.command)))
+        if args.command in ("on", "off"):
+            results = asyncio.run(home.switch(target, args.command == "on"))
+        else:
+            results = asyncio.run(home.move(target, Direction(args.command)))
     except FileNotFoundError as exc:
         print(
             f"file not found: {exc.filename}; create the device file with: "

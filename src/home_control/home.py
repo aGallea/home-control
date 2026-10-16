@@ -11,7 +11,7 @@ from home_control.backends import default_backends
 from home_control.backends.base import Backend, BackendError
 from home_control.config import ALL, ParsedConfig, parse_config
 from home_control.errors import UnknownTargetError
-from home_control.models import SHUTTER, CommandResult, Device, Direction, Outcome, normalize_name
+from home_control.models import LIGHT, SHUTTER, CommandResult, Device, Direction, Outcome, normalize_name
 
 logger = logging.getLogger(__name__)
 
@@ -79,11 +79,17 @@ class Home:
         if not found:
             raise UnknownTargetError(target, self.valid_names(SHUTTER))
         results = list(await asyncio.gather(*(self._safe_move(d, direction) for d in found)))
+        self._log_failures(direction.value, results)
+        return results
+
+    def _log_failures(self, action: str, results: list[CommandResult]) -> None:
+        backend_of = {d.name: d.backend for d in self._devices}
         for r in results:
             if not r.ok:
-                hint = "; if its IP changed, run: home-control scan" if r.outcome is Outcome.UNREACHABLE else ""
-                logger.warning("%s %s: %s (%s)%s", direction.value, r.device_name, r.outcome.value, r.detail, hint)
-        return results
+                hint = ""
+                if r.outcome is Outcome.UNREACHABLE and backend_of.get(r.device_name) == "tuya_lan":
+                    hint = "; if its IP changed, run: home-control scan"
+                logger.warning("%s %s: %s (%s)%s", action, r.device_name, r.outcome.value, r.detail, hint)
 
     async def up(self, target: str) -> list[CommandResult]:
         """Raise the target's shutters."""
@@ -96,6 +102,30 @@ class Home:
     async def stop(self, target: str) -> list[CommandResult]:
         """Stop the target's shutters."""
         return await self.move(target, Direction.STOP)
+
+    async def _safe_switch(self, device: Device, on: bool) -> CommandResult:
+        try:
+            return await self._backends[device.backend].switch(device, on)
+        except Exception as exc:  # a backend bug must not break the other devices
+            return CommandResult(device.name, Outcome.REJECTED, f"{type(exc).__name__}: {exc}")
+
+    async def switch(self, target: str, on: bool) -> list[CommandResult]:
+        """Turn every light the target names on or off, concurrently."""
+        lights = [d for d in self._devices if d.type == LIGHT]
+        found = self._match(target, lights)
+        if not found:
+            raise UnknownTargetError(target, self.valid_names(LIGHT))
+        results = list(await asyncio.gather(*(self._safe_switch(d, on) for d in found)))
+        self._log_failures("on" if on else "off", results)
+        return results
+
+    async def on(self, target: str) -> list[CommandResult]:
+        """Turn the target's lights on."""
+        return await self.switch(target, True)
+
+    async def off(self, target: str) -> list[CommandResult]:
+        """Turn the target's lights off."""
+        return await self.switch(target, False)
 
     async def _safe_status(self, device: Device) -> dict[str, Any]:
         try:
