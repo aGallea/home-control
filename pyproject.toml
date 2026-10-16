@@ -4,12 +4,15 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "home-control"
-version = "0.2.1"
+version = "0.3.0"
 description = "Local-only control of home devices (Tuya LAN shutters), configured by the caller."
 readme = "README.md"
 license = "MIT"
 requires-python = ">=3.11"
-dependencies = ["tinytuya>=1.17,<1.18"]
+dependencies = [
+    "aiomqtt==2.5.1",
+    "tinytuya>=1.17,<1.18",
+]
 
 [project.urls]
 Source = "https://github.com/aGallea/home-control"
