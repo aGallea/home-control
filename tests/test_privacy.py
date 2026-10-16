@@ -43,8 +43,13 @@ def test_no_foreign_email_addresses():
 
 
 def test_commit_identities_are_noreply():
-    proc = subprocess.run(["git", "log", "--all", "--format=%ae%n%ce"], cwd=ROOT, capture_output=True, text=True)
-    emails = set(proc.stdout.split()) if proc.returncode == 0 else set()  # no commits yet -> nothing to check
+    proc = subprocess.run(["git", "log", "--all", "--format=%ae %ce"], cwd=ROOT, capture_output=True, text=True)
+    pairs = [line.split() for line in proc.stdout.splitlines()] if proc.returncode == 0 else []  # no commits yet
+    emails = set()
+    for author, committer in pairs:
+        emails.add(committer)
+        if committer.casefold() != "noreply@github.com":  # GitHub-made merges carry the merging user's own address
+            emails.add(author)
     assert {e.casefold() for e in emails} <= ALLOWED_EMAILS
 
 
